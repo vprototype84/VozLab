@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Transcriptor IA</title>
+  <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+  <link rel="icon" type="image/png" sizes="256x256" href="icon-256.png">
+  <link rel="icon" type="image/png" sizes="128x128" href="favicon-128.png">
+  <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png">
+  <link rel="stylesheet" href="style.css?v=20260707-menu2">
+</head>
+<body>
+<div id="app">
+
+  <!-- ══ SIDEBAR ══════════════════════════════════════════════ -->
+  <aside id="sidebar">
+    <div class="sidebar-top">
+      <button class="app-brand" id="brand-home-btn" title="Ir al menú principal">
+        <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+          <line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+        <span>Transcriptor IA</span>
+      </button>
+    </div>
+
+    <div class="sidebar-section-label">
+      <span>Historial</span>
+      <div class="sidebar-label-actions">
+        <button class="icon-btn" id="refresh-history-btn" title="Actualizar historial">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="23 4 23 10 17 10"/>
+            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+          </svg>
+        </button>
+        <button class="icon-btn" id="clear-history-btn" title="Borrar todo el historial">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <div id="history-list" class="history-list">
+      <div class="history-empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+        </svg>
+        <p>Sin transcripciones anteriores</p>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ══ MAIN ══════════════════════════════════════════════════ -->
+  <main id="main">
+
+    <!-- Header -->
+    <header class="app-header" id="app-header">
+      <div class="header-settings">
+        <div class="setting-group">
+          <label class="setting-label">Idioma</label>
+          <select id="lang-select" class="select-sm">
+            <option value="es">Español</option>
+            <option value="en">English</option>
+            <option value="fr">Français</option>
+            <option value="de">Deutsch</option>
+            <option value="it">Italiano</option>
+            <option value="pt">Português</option>
+            <option value="auto">Auto-detectar</option>
+          </select>
+        </div>
+        <div class="setting-group">
+          <label class="setting-label">Modelo Whisper</label>
+          <select id="model-select" class="select-sm">
+            <option value="auto" selected>Automático (recomendado) ⚡</option>
+            <option value="large-v3-turbo">Turbo (rápido, alta calidad)</option>
+            <option value="large-v3">Máxima calidad (~3 GB)</option>
+            <option value="small">Ligero (CPU, ~500 MB)</option>
+          </select>
+        </div>
+        <div class="setting-group">
+          <label class="setting-label">Detectar hablantes</label>
+          <label class="toggle" title="Activa o desactiva la separación de hablantes">
+            <input type="checkbox" id="diarize-toggle" checked>
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          </label>
+        </div>
+        <div class="setting-group" id="num-speakers-group">
+          <label class="setting-label" title="Si sabes cuántas personas hablan, indícalo: es mucho más fiable que 'Auto'.">Nº hablantes</label>
+          <select id="num-speakers-select" class="select-sm"
+                  title="Indicar el número exacto de personas da mejores resultados que 'Auto'.">
+            <option value="0">Auto (menos fiable)</option>
+            <option value="1">1 persona</option>
+            <option value="2" selected>2 personas</option>
+            <option value="3">3 personas</option>
+            <option value="4">4 personas</option>
+            <option value="5">5 personas</option>
+          </select>
+        </div>
+        <div id="ollama-status" class="status-badge status-checking">
+          <span class="status-dot"></span>
+          <span class="status-text">IA</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- ── HOME / MENÚ PRINCIPAL ─────────────────────────────── -->
+    <section id="sec-home" class="panel">
+      <div class="home-menu">
+        <h1 class="home-title">¿Qué quieres hacer?</h1>
+        <div class="home-cards">
+          <button class="home-btn" id="home-transcribe-btn">
+            <span class="home-btn-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                <line x1="12" y1="19" x2="12" y2="23"/>
+                <line x1="8" y1="23" x2="16" y2="23"/>
+              </svg>
+            </span>
+            <span class="home-btn-title">Transcripción</span>
+            <span class="home-btn-desc">Sube o graba audio y conviértelo en texto</span>
+          </button>
+          <button class="home-btn" id="home-narrate-btn">
+            <span class="home-btn-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+                <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+              </svg>
+            </span>
+            <span class="home-btn-title">Narración</span>
+            <span class="home-btn-desc">Convierte texto en voz o gestiona tus voces</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── UPLOAD SECTION ────────────────────────────────────── -->
+    <section id="sec-upload" class="panel hidden">
+      <div class="section-back">
+        <button class="btn btn-ghost btn-sm" id="upload-back-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          Volver
+        </button>
+      </div>
+      <div id="drop-zone" class="drop-zone">
+        <div class="drop-inner">
+          <div class="drop-icon-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3">
+              <path d="M9 19V6l12-3v13"/>
+              <circle cx="6" cy="18" r="3"/>
+              <circle cx="18" cy="16" r="3"/>
+            </svg>
+          </div>
+          <h2 class="drop-title">Arrastra tu audio aquí</h2>
+          <p class="drop-sub">mp3 · m4a · wav · ogg · webm · mp4</p>
+          <div class="drop-actions-grid">
+            <button class="btn btn-primary" id="browse-btn" title="Sube un archivo de audio ya grabado">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+              Subir archivo
+            </button>
+            <button class="btn btn-outline" id="record-btn" title="Graba con tu micrófono">
+              <span class="rec-dot"></span>
+              Grabar micrófono
+            </button>
+            <button class="btn btn-outline" id="meeting-btn" title="Captura el audio del sistema (Zoom, Meet, Teams…) + tu micrófono.">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="15" height="15">
+                <rect x="2" y="3" width="20" height="14" rx="2"/>
+                <path d="M8 21h8M12 17v4"/>
+              </svg>
+              Reunión
+            </button>
+            <button class="btn btn-outline" id="web-meeting-btn" title="Graba el audio de una pestaña del navegador: formaciones, vídeos, entrevistas…">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="15" height="15">
+                <rect x="2" y="3" width="20" height="14" rx="2"/>
+                <path d="M8 21h8M12 17v4"/>
+                <path d="M9 8h6M9 11h4" stroke-linecap="round"/>
+              </svg>
+              Audio de pestaña
+            </button>
+            <button class="btn btn-outline" id="screenrec-btn" title="Graba la pantalla en vídeo + audio del sistema y micrófono. Genera un MP4 descargable y transcripción. Requiere permiso de Grabación de pantalla.">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="15" height="15">
+                <rect x="2" y="3" width="20" height="14" rx="2"/>
+                <path d="M8 21h8M12 17v4"/>
+                <circle cx="12" cy="10" r="2.5" fill="currentColor" stroke="none" opacity="0.75"/>
+              </svg>
+              Grabar pantalla (vídeo)
+            </button>
+          </div>
+        </div>
+      </div>
+      <input type="file" id="file-input" accept=".mp3,.m4a,.wav,.ogg,.webm,.mp4,.flac,.aac,.mov,audio/*" hidden>
+    </section>
+
+    <!-- ── RECORDER SECTION ──────────────────────────────────── -->
+    <section id="sec-recorder" class="panel hidden">
+      <div class="recorder-card">
+        <div class="recorder-head">
+          <div class="rec-indicator">
+            <span class="rec-pulse"></span>
+            Grabando
+          </div>
+          <span id="rec-time" class="rec-time">00:00</span>
+          <button class="icon-btn" id="close-recorder-btn" title="Cancelar grabación">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <canvas id="waveform" width="600" height="72"></canvas>
+        <div class="recorder-footer">
+          <button class="btn btn-outline" id="pause-rec-btn">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+              <rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>
+            </svg>
+            Pausar
+          </button>
+          <button class="btn btn-danger" id="stop-rec-btn">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+            </svg>
+            Detener y usar grabación
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── MEETING RECORDER SECTION ──────────────────────────── -->
+    <section id="sec-meeting" class="panel hidden">
+      <div class="recorder-card">
+        <div class="recorder-head">
+          <div class="rec-indicator">
+            <span class="rec-pulse"></span>
+            Grabando reunión
+          </div>
+          <span id="meeting-time" class="rec-time">00:00</span>
+          <button class="icon-btn" id="close-meeting-btn" title="Cancelar grabación">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <div class="meeting-waves">
+          <div class="wave-row">
+            <span class="wave-label">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="13" height="13">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+              </svg>
+              Tu micro
+            </span>
+            <canvas id="wave-mic" class="meeting-wave" width="600" height="56"></canvas>
+          </div>
+          <div class="wave-row">
+            <span class="wave-label">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="13" height="13">
+                <rect x="2" y="7" width="13" height="10" rx="2"/><path d="M15 10l6-3v10l-6-3"/>
+              </svg>
+              Pantalla
+            </span>
+            <canvas id="wave-sys" class="meeting-wave" width="600" height="56"></canvas>
+          </div>
+        </div>
+        <div class="recorder-footer">
+          <button class="btn btn-outline" id="pause-meeting-btn">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+              <rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>
+            </svg>
+            Pausar
+          </button>
+          <button class="btn btn-danger" id="stop-meeting-btn">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+            </svg>
+            Detener y transcribir
+          </button>
+        </div>
+        <div class="meeting-consent">
+          Graba a todos los participantes. Asegúrate de contar con su consentimiento.
+        </div>
+      </div>
+    </section>
+
+    <!-- ── SCREEN RECORDER SECTION ─────────────────────────────── -->
+    <section id="sec-screenrec" class="panel hidden">
+      <div class="recorder-card">
+        <div class="recorder-head">
+          <div class="rec-indicator">
+            <span class="rec-pulse"></span>
+            Grabando pantalla
+          </div>
+          <span id="screenrec-time" class="rec-time">00:00</span>
+          <button class="icon-btn" id="close-screenrec-btn" title="Cancelar grabación">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <div class="meeting-waves">
+          <div class="wave-row">
+            <span class="wave-label">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="13" height="13">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+              </svg>
+              Tu micro
+            </span>
+            <canvas id="screenrec-wave-mic" class="meeting-wave" width="600" height="56"></canvas>
+          </div>
+          <div class="wave-row">
+            <span class="wave-label">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="13" height="13">
+                <rect x="2" y="7" width="13" height="10" rx="2"/><path d="M15 10l6-3v10l-6-3"/>
+              </svg>
+              Pantalla
+            </span>
+            <canvas id="screenrec-wave-sys" class="meeting-wave" width="600" height="56"></canvas>
+          </div>
+        </div>
+        <div class="recorder-footer">
+          <button class="btn btn-outline" id="pause-screenrec-btn">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+              <rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>
+            </svg>
+            Pausar
+          </button>
+          <button class="btn btn-danger" id="stop-screenrec-btn">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+            </svg>
+            Detener y guardar vídeo
+          </button>
+        </div>
+        <div class="meeting-consent">
+          Graba pantalla y audio. Asegúrate de contar con el consentimiento de todos los participantes.
+        </div>
+      </div>
+    </section>
+
+    <!-- ── TAB AUDIO SETUP PANEL ───────────────────────────────── -->
+    <section id="sec-tabsetup" class="panel hidden">
+      <div class="tabsetup-card">
+        <div class="tabsetup-head">
+          <h2 class="section-title">Grabar audio de una pestaña</h2>
+          <button class="icon-btn" id="close-tabsetup-btn" title="Cancelar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <p class="tabsetup-sub">Se abrirá el navegador para que elijas la pestaña a grabar (formación, vídeo, podcast, entrevista…).</p>
+
+        <div class="tabsetup-options">
+          <label class="tabsetup-option" id="tabopt-single">
+            <input type="radio" name="tab-diarize" value="none" checked>
+            <div class="tabsetup-option-body">
+              <div class="tabsetup-option-title">Solo transcribir el texto</div>
+              <div class="tabsetup-option-desc">Sin detectar hablantes. Ideal para formaciones, ponencias o vídeos de una sola voz.</div>
+            </div>
+          </label>
+          <label class="tabsetup-option" id="tabopt-multi">
+            <input type="radio" name="tab-diarize" value="speakers">
+            <div class="tabsetup-option-body">
+              <div class="tabsetup-option-title">Identificar hablantes</div>
+              <div class="tabsetup-option-desc">Detecta quién habla. Útil para entrevistas, debates o conversaciones.</div>
+              <div class="tabsetup-speakers hidden" id="tabsetup-speakers-row">
+                <label class="setting-label" style="font-size:.82rem">Nº de hablantes</label>
+                <select id="tab-num-speakers" class="select-sm">
+                  <option value="0">Auto (menos fiable)</option>
+                  <option value="2" selected>2 personas</option>
+                  <option value="3">3 personas</option>
+                  <option value="4">4 personas</option>
+                  <option value="5">5 personas</option>
+                </select>
+              </div>
+            </div>
+          </label>
+        </div>
+
+        <button class="btn btn-primary" id="start-tabrecording-btn" style="width:100%;margin-top:20px">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15">
+            <rect x="2" y="3" width="20" height="14" rx="2"/>
+            <path d="M8 21h8M12 17v4"/>
+          </svg>
+          Iniciar grabación en el navegador
+        </button>
+      </div>
+    </section>
+
+    <!-- ── WEB MEETING WAITING PANEL ──────────────────────────── -->
+    <section id="sec-webmeeting" class="panel hidden">
+      <div class="recorder-card">
+        <div class="recorder-head">
+          <div class="rec-indicator">
+            <span class="rec-pulse"></span>
+            Grabando en el navegador
+          </div>
+          <span id="webmeeting-time" class="rec-time">00:00</span>
+          <button class="icon-btn" id="close-webmeeting-btn" title="Cancelar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <div class="webmeeting-info">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="28" height="28">
+            <rect x="2" y="3" width="20" height="14" rx="2"/>
+            <path d="M8 21h8M12 17v4"/>
+          </svg>
+          <p>Grabando en la pestaña del navegador.</p>
+          <p class="webmeeting-sub">Puedes parar desde aquí o desde el botón "Detener" de la pestaña del navegador.</p>
+        </div>
+        <div class="recorder-footer">
+          <button class="btn btn-danger" id="stop-webmeeting-btn">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+            </svg>
+            Detener y transcribir
+          </button>
+        </div>
+        <div class="meeting-consent">
+          Graba a todos los participantes. Asegúrate de contar con su consentimiento.
+        </div>
+      </div>
+    </section>
+
+    <!-- ── FILE INFO ─────────────────────────────────────────── -->
+    <section id="sec-fileinfo" class="panel hidden">
+      <div class="fileinfo-card">
+        <div class="fileinfo-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M9 19V6l12-3v13"/>
+            <circle cx="6" cy="18" r="3"/>
+            <circle cx="18" cy="16" r="3"/>
+          </svg>
+        </div>
+        <div class="fileinfo-meta">
+          <div class="fileinfo-name" id="fileinfo-name">—</div>
+          <div class="fileinfo-sub" id="fileinfo-sub">—</div>
+        </div>
+        <div class="fileinfo-actions">
+          <button class="btn btn-ghost" id="change-file-btn">Cambiar</button>
+          <button class="btn btn-outline hidden" id="download-audio-btn" title="Descargar el audio original">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Descargar audio
+          </button>
+          <button class="btn btn-outline hidden" id="download-video-btn" title="Descargar la grabación de pantalla como MP4">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15">
+              <rect x="2" y="3" width="20" height="14" rx="2"/>
+              <path d="M8 21h8M12 17v4"/>
+              <polyline points="7 10 12 15 17 10"/>
+            </svg>
+            Descargar vídeo
+          </button>
+          <button class="btn btn-primary" id="transcribe-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+            Transcribir
+          </button>
+        </div>
+      </div>
+      <div id="fileinfo-notice" class="fileinfo-notice hidden">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+          <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+        <span>El audio original es temporal y no se guarda de forma permanente. Descárgalo ahora si quieres conservarlo (por si la transcripción falla).</span>
+      </div>
+    </section>
+
+    <!-- ── PROGRESS ──────────────────────────────────────────── -->
+    <section id="sec-progress" class="panel hidden">
+      <div class="progress-card">
+        <div class="progress-head">
+          <span id="progress-msg">Iniciando…</span>
+          <span id="progress-pct" class="progress-pct">0%</span>
+        </div>
+        <div class="progress-track">
+          <div id="progress-bar" class="progress-fill" style="width:0%"></div>
+        </div>
+        <div id="progress-timer" class="progress-timer hidden">
+          <span id="timer-elapsed">0s</span>
+          <span class="timer-sep">·</span>
+          <span id="timer-remaining">calculando…</span>
+        </div>
+        <div id="live-segments" class="live-segments"></div>
+      </div>
+    </section>
+
+    <!-- ── AI PANEL ──────────────────────────────────────────── -->
+    <section id="sec-ai" class="panel hidden">
+      <div class="ai-panel">
+        <div class="ai-panel-head">
+          <h3 class="ai-panel-title">Procesar con IA</h3>
+          <span class="ai-model-tag">gemma4:e4b</span>
+        </div>
+        <div class="ai-buttons">
+          <button class="ai-btn" id="btn-clean" data-action="clean">
+            <span class="ai-btn-icon">✨</span>
+            <div>
+              <div class="ai-btn-title">Limpiar texto</div>
+              <div class="ai-btn-desc">Elimina muletillas y mejora puntuación</div>
+            </div>
+          </button>
+          <button class="ai-btn" id="btn-summary" data-action="summary">
+            <span class="ai-btn-icon">📋</span>
+            <div>
+              <div class="ai-btn-title">Resumen ejecutivo</div>
+              <div class="ai-btn-desc">Puntos clave en bullet points</div>
+            </div>
+          </button>
+          <button class="ai-btn" id="btn-minutes" data-action="minutes">
+            <span class="ai-btn-icon">📝</span>
+            <div>
+              <div class="ai-btn-title">Acta de reunión</div>
+              <div class="ai-btn-desc">Formato profesional con acuerdos y pasos</div>
+            </div>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── AI RESULTS ────────────────────────────────────────── -->
+    <section id="sec-ai-results" class="panel hidden">
+      <div class="ai-results-card">
+        <div class="ai-results-head">
+          <div class="ai-results-title-row">
+            <span id="ai-res-icon">✨</span>
+            <h3 id="ai-res-label">Resultado</h3>
+            <span id="ai-thinking" class="ai-thinking hidden">Procesando…</span>
+          </div>
+          <div class="ai-results-actions">
+            <button class="btn btn-sm" id="copy-ai-btn">Copiar</button>
+            <button class="btn btn-sm" id="export-ai-txt-btn">.txt</button>
+            <button class="btn btn-sm" id="export-ai-docx-btn">.docx</button>
+            <button class="icon-btn" id="close-ai-btn" title="Cerrar resultado">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div id="ai-result-body" class="ai-result-body"></div>
+      </div>
+    </section>
+
+    <!-- ── TRANSCRIPTION EDITOR ──────────────────────────────── -->
+    <section id="sec-transcription" class="panel hidden">
+
+      <!-- Barra superior: título + botón Nueva destacado -->
+      <div class="trans-header">
+        <div class="trans-header-left">
+          <h2 class="section-title">Transcripción</h2>
+          <span id="seg-count" class="seg-count"></span>
+        </div>
+        <button class="btn btn-outline new-trans-prominent" id="new-trans-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          Nueva transcripción
+        </button>
+      </div>
+
+      <!-- Panel de hablantes -->
+      <div id="speaker-panel" class="speaker-panel hidden">
+        <div class="speaker-panel-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+          Identificar hablantes
+        </div>
+        <div id="speaker-cards" class="speaker-cards"></div>
+      </div>
+
+      <!-- Barra de re-transcripción -->
+      <div id="retx-bar" class="retx-bar hidden">
+        <span class="retx-label">Re-transcribir con:</span>
+        <select id="retx-speakers" class="select-sm">
+          <option value="nodiar">Sin detectar hablantes</option>
+          <option value="0">Auto-detectar hablantes</option>
+          <option value="1">1 persona</option>
+          <option value="2">2 personas</option>
+          <option value="3">3 personas</option>
+          <option value="4">4 personas</option>
+          <option value="5">5 personas</option>
+        </select>
+        <button class="btn btn-primary btn-sm" id="retx-go-btn">Transcribir de nuevo</button>
+        <button class="icon-btn" id="retx-close-btn" title="Cancelar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Toolbar acciones -->
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <button class="btn btn-sm btn-ghost" id="retranscribe-btn" title="Volver a transcribir el mismo audio con otros ajustes">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+              <polyline points="23 4 23 10 17 10"/>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+            </svg>
+            Re-transcribir
+          </button>
+        </div>
+        <div class="toolbar-right">
+          <button class="btn btn-sm" id="copy-trans-btn" title="Copiar transcripción">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2"/>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+            Copiar
+          </button>
+          <button class="btn btn-sm" id="export-txt-btn" title="Exportar como .txt">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+            </svg>
+            .txt
+          </button>
+          <button class="btn btn-sm" id="export-docx-btn" title="Exportar como .docx">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+            </svg>
+            .docx
+          </button>
+        </div>
+      </div>
+
+      <div id="segments-wrap" class="segments-wrap"></div>
+    </section>
+
+    <!-- ── GESTOR DE VOCES TTS ──────────────────────────────── -->
+    <section id="sec-tts-voices" class="panel hidden">
+      <div class="tts-panel-card">
+
+        <div class="tts-panel-head">
+          <h2 class="section-title">Gestionar voces</h2>
+          <button class="icon-btn" id="close-voices-btn" title="Cerrar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Tabs -->
+        <div class="voice-tabs">
+          <button class="voice-tab active" data-tab="predefined">Voces predefinidas</button>
+          <button class="voice-tab" data-tab="custom">Mis voces clonadas</button>
+        </div>
+
+        <!-- Tab: voces predefinidas -->
+        <div id="tab-predefined" class="voice-tab-content">
+          <div id="predefined-voices-list" class="voices-list">
+            <div class="voices-loading">Cargando voces…</div>
+          </div>
+        </div>
+
+        <!-- Tab: voces clonadas -->
+        <div id="tab-custom" class="voice-tab-content hidden">
+          <div id="custom-voices-list" class="voices-list"></div>
+
+          <div class="clone-section">
+            <h3 class="clone-title">Clonar una voz nueva</h3>
+            <p class="clone-sub">Graba unos 30 segundos leyendo el texto guía en voz alta para crear tu voz personalizada.</p>
+
+            <div class="clone-form">
+              <div class="clone-field">
+                <label class="clone-label">Nombre de la voz</label>
+                <input type="text" id="clone-name" class="clone-input" placeholder="Ej: Mi voz, Narrador…" maxlength="40">
+              </div>
+              <div class="clone-field">
+                <label class="clone-label">Idioma</label>
+                <select id="clone-lang" class="select-sm">
+                  <option value="es">Español</option>
+                  <option value="en">English</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Texto guía -->
+            <div class="clone-script">
+              <div class="clone-script-label">Lee este texto en voz alta (~30 segundos):</div>
+              <div id="clone-script-text" class="clone-script-content">Hola, esta es mi voz. Voy a leer este texto para que el sistema pueda aprender cómo sueno. Mi pronunciación es clara y natural. Hablo con una velocidad moderada para facilitar la transcripción y síntesis. Este sistema me permitirá narrar textos con mi propia voz más adelante. Es importante mantener un tono constante y sin ruidos de fondo para obtener mejores resultados.</div>
+            </div>
+
+            <!-- Controles de grabación -->
+            <div class="clone-recorder">
+              <button class="btn btn-outline" id="clone-record-btn">
+                <span class="rec-dot"></span>
+                Grabar voz de referencia
+              </button>
+              <span id="clone-rec-time" class="rec-time hidden">00:00</span>
+              <button class="btn btn-danger hidden" id="clone-stop-btn">
+                <svg viewBox="0 0 24 24" fill="currentColor" width="13" height="13">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/>
+                </svg>
+                Detener
+              </button>
+            </div>
+
+            <!-- Preview tras grabar -->
+            <div class="clone-preview hidden" id="clone-preview">
+              <audio id="clone-audio-preview" controls class="clone-audio-player"></audio>
+              <div class="clone-preview-actions">
+                <button class="btn btn-ghost" id="clone-redo-btn">Volver a grabar</button>
+                <button class="btn btn-primary" id="clone-save-btn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                    <polyline points="17 21 17 13 7 13 7 21"/>
+                  </svg>
+                  Guardar voz
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ── NARRADOR DE TEXTO TTS ──────────────────────────────── -->
+    <section id="sec-tts-narrate" class="panel hidden">
+      <div class="tts-panel-card">
+
+        <div class="tts-panel-head">
+          <h2 class="section-title">Narrar texto</h2>
+          <div class="tts-panel-head-actions">
+            <button class="btn btn-ghost btn-sm" id="narrate-manage-voices-btn" title="Gestionar voces predefinidas y clonar tu propia voz">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="14" height="14">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                <line x1="12" y1="19" x2="12" y2="23"/>
+                <line x1="8" y1="23" x2="16" y2="23"/>
+              </svg>
+              Gestionar voces
+            </button>
+            <button class="icon-btn" id="close-narrate-btn" title="Cerrar">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Selección de motor de voz (local vs ElevenLabs) -->
+        <div class="narrate-engine-bar">
+          <div class="narrate-field narrate-field-grow">
+            <label class="clone-label">Motor de voz</label>
+            <select id="narrate-engine" class="select-sm" title="Chatterbox: local y gratis. ElevenLabs: nube, calidad alta y mejor clonado (requiere API key y consume créditos).">
+              <option value="chatterbox">Chatterbox · local, gratis</option>
+              <option value="elevenlabs">ElevenLabs · nube, calidad alta</option>
+            </select>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="narrate-engine-config-btn" title="Configurar ElevenLabs">⚙ Configurar</button>
+        </div>
+
+        <!-- Configuración de ElevenLabs (API key + modelo) -->
+        <div id="elevenlabs-config" class="elevenlabs-config hidden">
+          <div class="narrate-field">
+            <label class="clone-label">API key de ElevenLabs</label>
+            <input type="password" id="el-api-key" class="clone-input" placeholder="Pega aquí tu clave (elevenlabs.io → Profile → API Keys)" autocomplete="off" spellcheck="false">
+            <div id="el-key-status" class="el-key-status"></div>
+          </div>
+          <div class="narrate-field">
+            <label class="clone-label">Modelo</label>
+            <select id="el-model" class="select-sm"></select>
+          </div>
+          <button class="btn btn-primary btn-sm" id="el-save-btn">Guardar y validar</button>
+        </div>
+
+        <div class="narrate-form">
+          <div class="narrate-row">
+            <div class="narrate-field narrate-field-grow">
+              <label class="clone-label">Voz</label>
+              <select id="narrate-voice" class="select-sm narrate-voice-select">
+                <option value="">Cargando voces…</option>
+              </select>
+            </div>
+            <div class="narrate-field">
+              <label class="clone-label">Perfil</label>
+              <select id="narrate-profile" class="select-sm" title="Tono de la narración (ritmo y energía).">
+                <option value="normal">Normal</option>
+              </select>
+            </div>
+            <div class="narrate-field">
+              <label class="clone-label">Idioma</label>
+              <select id="narrate-language" class="select-sm" title="Idioma en el que hablará la voz. Una voz en español también puede narrar en inglés.">
+                <option value="es">Español</option>
+                <option value="en">Inglés</option>
+                <option value="en_es">Inglés (acento español)</option>
+              </select>
+            </div>
+            <div class="narrate-field">
+              <label class="clone-label">Formato</label>
+              <select id="narrate-format" class="select-sm">
+                <option value="mp3">MP3</option>
+                <option value="wav">WAV</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="narrate-row narrate-sliders">
+            <div class="narrate-field narrate-field-grow">
+              <label class="clone-label">Velocidad <span id="narrate-speed-val" class="narrate-slider-val">1.00×</span></label>
+              <input type="range" id="narrate-speed" class="narrate-range" min="0.7" max="1.2" step="0.01" value="1.0">
+            </div>
+            <div class="narrate-field narrate-field-grow">
+              <label class="clone-label">Estabilidad <span id="narrate-stability-val" class="narrate-slider-val">50%</span></label>
+              <input type="range" id="narrate-stability" class="narrate-range" min="0" max="1" step="0.01" value="0.5"
+                     title="Baja = voz más expresiva y variable. Alta = voz más consistente y plana.">
+            </div>
+            <div class="narrate-field narrate-field-grow">
+              <label class="clone-label">Similitud <span id="narrate-similarity-val" class="narrate-slider-val">50%</span></label>
+              <input type="range" id="narrate-similarity" class="narrate-range" min="0" max="1" step="0.01" value="0.5"
+                     title="Cuánto se ciñe la generación a la voz clonada de referencia.">
+            </div>
+          </div>
+
+          <div class="narrate-field">
+            <label class="clone-label">Texto a narrar</label>
+            <textarea id="narrate-text" class="narrate-textarea"
+                      placeholder="Escribe o pega aquí el texto que quieres narrar…"
+                      maxlength="5000"></textarea>
+            <div class="narrate-char-count"><span id="narrate-char-n">0</span> / 5000</div>
+          </div>
+
+          <!-- Aviso primera descarga del modelo -->
+          <div id="narrate-model-notice" class="narrate-model-notice hidden">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" style="flex:0 0 auto;margin-top:1px">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            <span id="narrate-model-msg">Preparando el modelo de voz…</span>
+          </div>
+
+          <button class="btn btn-primary" id="narrate-generate-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15">
+              <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+            Generar audio
+          </button>
+        </div>
+
+        <!-- Progreso durante la generación -->
+        <div class="narrate-progress hidden" id="narrate-progress">
+          <div class="progress-head">
+            <span id="narrate-progress-msg">Generando audio…</span>
+            <span id="narrate-progress-pct" class="progress-pct">0%</span>
+          </div>
+          <div class="progress-track">
+            <div id="narrate-progress-bar" class="progress-fill" style="width:0%"></div>
+          </div>
+        </div>
+
+        <!-- Resultado: player + descargar -->
+        <div class="narrate-result hidden" id="narrate-result">
+          <div class="narrate-result-head">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18" style="color:var(--green)">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+              <polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+            <span>Audio generado</span>
+          </div>
+          <audio id="narrate-audio-player" controls class="narrate-audio-player"></audio>
+          <div class="narrate-result-actions">
+            <button class="btn btn-primary" id="narrate-download-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              Descargar
+            </button>
+            <button class="btn btn-ghost" id="narrate-new-btn">Nuevo audio</button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- Audio oculto para el preview de hablantes -->
+<audio id="preview-audio" preload="none"></audio>
+
+<!-- Toast container -->
+<div id="toasts" class="toasts"></div>
+
+<!-- FAB: scroll al panel de IA -->
+<button id="scroll-ai-btn" class="scroll-ai-fab hidden" title="Ir a herramientas de IA" aria-label="Ir a herramientas de IA">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="20" height="20">
+    <polyline points="6 9 12 15 18 9"/>
+  </svg>
+</button>
+
+<script src="app.js?v=20260707-menu2"></script>
+</body>
+</html>

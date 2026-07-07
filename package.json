@@ -1,0 +1,15 @@
+{
+  "name": "transcriptor-ia",
+  "version": "1.0.0",
+  "description": "Transcripción de audio con IA, diarización y narrador de voz — versión Windows",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "electron .",
+    "build:win": "electron-builder --win",
+    "build:win:portable": "electron-builder --win portable"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  }
+}

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Transcriptor IA</title>
+<style>
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #FAF8F5;
+    color: #2A2520;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+  }
+  h1 { font-size: 1.3rem; font-weight: 500; margin-bottom: 8px; }
+  p.sub { color: #5A5248; font-size: .9rem; margin-bottom: 24px; }
+  .spinner {
+    width: 28px; height: 28px;
+    border: 3px solid #DDD8CF;
+    border-top-color: #C97B5F;
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+    margin-bottom: 20px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #log {
+    width: 100%;
+    max-width: 560px;
+    max-height: 220px;
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid #DDD8CF;
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: .78rem;
+    font-family: ui-monospace, Consolas, monospace;
+    color: #5A5248;
+    white-space: pre-wrap;
+  }
+</style>
+</head>
+<body>
+  <div class="spinner"></div>
+  <h1>Preparando Transcriptor IA…</h1>
+  <p class="sub">La primera vez puede tardar varios minutos (descarga de Python, dependencias y modelos).</p>
+  <div id="log"></div>
+  <script>
+    const logEl = document.getElementById('log');
+    if (window.transcriptorIA) {
+      window.transcriptorIA.onProvisionLog((msg) => {
+        logEl.textContent += msg + '\n';
+        logEl.scrollTop = logEl.scrollHeight;
+      });
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.venv/
+resources/bin/
+resources/ffmpeg/
+models/diarization/*.onnx
+models/diarization/**/*.onnx
+voices/custom/
+backend/__pycache__/
+backend/**/__pycache__/
+*.pyc
+tmp/
+.claude/
+*.log
+*log*.txt
+tts_settings.json

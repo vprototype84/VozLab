@@ -1,0 +1,24 @@
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+faster-whisper>=1.1.0
+python-docx>=1.1.0
+python-multipart>=0.0.9
+httpx>=0.27.0
+aiofiles>=23.2.1
+Pillow>=10.0.0
+sherpa-onnx>=1.13.0
+soundfile>=0.12.0
+# chatterbox-tts fija numpy<2.0 en Python<3.13; lo fijamos aquí para evitar que
+# pip resuelva una numpy 2.x incompatible con sherpa-onnx/faster-whisper.
+numpy>=1.24.0,<2.0
+soundcard>=0.4.3
+# Motor TTS: Chatterbox Multilingual (Resemble AI), licencia MIT, calidad tipo
+# ElevenLabs y clonación de voz zero-shot. Sustituye a Coqui XTTS-v2.
+# Arrastra sus propias dependencias fijadas (transformers 5.x, librosa, diffusers,
+# safetensors, etc.). El resto del backend (faster-whisper, sherpa-onnx) no usa
+# transformers, así que el salto a la 5.x no les afecta.
+chatterbox-tts==0.1.7
+
+# torch/torchaudio NO se instalan aquí: se instalan en el provisioning
+# (scripts/setup.ps1 o electron/main.js) con el índice de PyTorch correcto
+# según si hay GPU NVIDIA disponible (CUDA) o no (CPU). Ver sección 4 del plan.

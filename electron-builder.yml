@@ -1,0 +1,43 @@
+appId: com.monicacoach.transcriptoria
+productName: TranscriptorIA
+directories:
+  output: dist
+files:
+  - electron/**/*
+  - renderer/**/*
+  - assets/**/*
+extraResources:
+  - from: backend
+    to: backend
+    filter:
+      - "**/*"
+      - "!**/__pycache__"
+  - from: renderer
+    to: renderer
+  - from: voices/predefined
+    to: voices/predefined
+  - from: models/diarization
+    to: models/diarization
+  - from: resources/bin
+    to: bin
+  - from: resources/ffmpeg
+    to: ffmpeg
+win:
+  target:
+    - nsis
+    - portable
+  icon: assets/icon-512.png
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  include: build/installer.nsh
+  deleteAppDataOnUninstall: false
+  artifactName: "TranscriptorIA-Setup-${version}.exe"
+portable:
+  # Nombre estable en %TEMP% para la extracción (NSIS portable siempre extrae
+  # a TEMP y lo borra al cerrar; fijar el nombre solo ayuda a la legibilidad,
+  # no evita la re-extracción en cada arranque — limitación del target NSIS).
+  unpackDirName: TranscriptorIA
+  artifactName: "TranscriptorIA-Portable-${version}.exe"
+  requestExecutionLevel: user

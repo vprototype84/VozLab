@@ -2,7 +2,7 @@
 
 **Transcripción y narración de voz con IA, 100 % local en tu PC (Windows).**
 
-VozLab (aplicación **TranscriptorIA**) convierte audio en texto y texto en voz, todo en tu ordenador:
+VozLab convierte audio en texto y texto en voz, todo en tu ordenador:
 
 - 🎙️ **Transcripción** de audio y vídeo (subir archivo, grabar micrófono, grabar una reunión, audio de una pestaña del navegador o grabación de pantalla).
 - 👥 **Identificación de hablantes** (diarización) offline.
@@ -19,9 +19,9 @@ Abre **PowerShell** y ejecuta:
 irm https://raw.githubusercontent.com/vprototype84/VozLab/main/install.ps1 | iex
 ```
 
-Esto descarga la última versión y la instala **solo para tu usuario** (no pide permisos de administrador). Al terminar, abre **TranscriptorIA** desde el menú Inicio.
+Esto descarga la última versión y la instala **solo para tu usuario** (no pide permisos de administrador). Al terminar, abre **VozLab** desde el menú Inicio.
 
-> ¿Prefieres hacerlo a mano? Descarga `TranscriptorIA-Setup-x.y.z.exe` desde la
+> ¿Prefieres hacerlo a mano? Descarga `VozLab-Setup-x.y.z.exe` desde la
 > [página de Releases](https://github.com/vprototype84/VozLab/releases) y ejecútalo.
 
 **Primer arranque:** la app prepara su entorno y descarga los modelos de voz la primera vez que los usas (la narración descarga ~1,8 GB una sola vez). Requiere conexión a Internet en ese primer uso.
@@ -30,7 +30,7 @@ Esto descarga la última versión y la instala **solo para tu usuario** (no pide
 
 ## Desinstalación
 
-Desde **Configuración › Aplicaciones › Aplicaciones instaladas › TranscriptorIA › Desinstalar** (o «Agregar o quitar programas»).
+Desde **Configuración › Aplicaciones › Aplicaciones instaladas › VozLab › Desinstalar** (o «Agregar o quitar programas»).
 
 ---
 

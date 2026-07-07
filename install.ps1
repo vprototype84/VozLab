@@ -8,7 +8,7 @@
   Descarga el instalador de la última versión publicada en GitHub Releases y lo
   ejecuta en silencio. Se instala solo para tu usuario (no requiere permisos de
   administrador) y queda registrado en Windows: podrás desinstalarlo desde
-  «Configuración › Aplicaciones › TranscriptorIA › Desinstalar».
+  «Configuración › Aplicaciones › VozLab › Desinstalar».
 #>
 
 $ErrorActionPreference = 'Stop'
@@ -64,6 +64,6 @@ Remove-Item $dest -ErrorAction SilentlyContinue
 
 Write-Host ""
 Write-Host "  ✓ VozLab instalado." -ForegroundColor Green
-Write-Host "    Ábrelo desde el menú Inicio buscando «TranscriptorIA»." -ForegroundColor Green
-Write-Host "    Desinstalar: Configuración › Aplicaciones › TranscriptorIA." -ForegroundColor DarkGray
+Write-Host "    Ábrelo desde el menú Inicio buscando «VozLab»." -ForegroundColor Green
+Write-Host "    Desinstalar: Configuración › Aplicaciones › VozLab." -ForegroundColor DarkGray
 Write-Host ""

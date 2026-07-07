@@ -1,5 +1,5 @@
 appId: com.monicacoach.transcriptoria
-productName: TranscriptorIA
+productName: VozLab
 directories:
   output: dist
 files:
@@ -33,11 +33,11 @@ nsis:
   allowToChangeInstallationDirectory: true
   include: build/installer.nsh
   deleteAppDataOnUninstall: false
-  artifactName: "TranscriptorIA-Setup-${version}.exe"
+  artifactName: "VozLab-Setup-${version}.exe"
 portable:
   # Nombre estable en %TEMP% para la extracción (NSIS portable siempre extrae
   # a TEMP y lo borra al cerrar; fijar el nombre solo ayuda a la legibilidad,
   # no evita la re-extracción en cada arranque — limitación del target NSIS).
-  unpackDirName: TranscriptorIA
-  artifactName: "TranscriptorIA-Portable-${version}.exe"
+  unpackDirName: VozLab
+  artifactName: "VozLab-Portable-${version}.exe"
   requestExecutionLevel: user

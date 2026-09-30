@@ -158,6 +158,8 @@ const CHROMELESS = new Set(['sec-home','sec-tts-voices','sec-tts-narrate']);
 function showOnly(...ids) {
   if (!ids.includes('sec-ai')) {
     document.getElementById('scroll-ai-btn')?.classList.add('hidden');
+  } else {
+    AIStatus.refresh();
   }
   for (const id of SECTIONS) {
     const el = document.getElementById(id);
@@ -511,17 +513,6 @@ const UI = {
         openHistoryMenu(btn, btn.dataset.id, btn.dataset.pinned === '1');
       });
     });
-  },
-
-  setOllamaStatus(ok) {
-    const badge = document.getElementById('ollama-status');
-    if (ok) {
-      badge.className = 'status-badge status-ok';
-      badge.querySelector('.status-text').textContent = 'IA conectada';
-    } else {
-      badge.className = 'status-badge status-error';
-      badge.querySelector('.status-text').textContent = 'IA no disponible';
-    }
   },
 };
 
@@ -1639,7 +1630,151 @@ const ACTION_META = {
   minutes: { label: 'Acta de reunión',    icon: '📝' },
 };
 
+// Estado de Ollama/modelo de IA — controla si los botones "Procesar con IA"
+// están activos, y el botón de instalación/descarga bajo demanda dentro del
+// propio panel (nada de esto se comprueba durante la instalación de la app).
+const AIStatus = {
+  state: 'checking',   // 'checking' | 'ready' | 'no_model' | 'not_running'
+  _pollTimer: null,
+
+  async refresh() {
+    try {
+      const res = await fetch('/api/ollama/status');
+      const data = await res.json();
+      this.state = data.state;
+      const tag = document.getElementById('ai-model-tag');
+      if (tag && data.model) tag.textContent = data.model;
+    } catch {
+      this.state = 'not_running';
+    }
+    this._render();
+  },
+
+  _render() {
+    const ready = this.state === 'ready';
+    document.querySelectorAll('.ai-btn').forEach(b => { b.disabled = !ready; });
+
+    const box  = document.getElementById('ai-unavailable');
+    const text = document.getElementById('ai-unavailable-text');
+    const btn  = document.getElementById('ai-install-btn');
+    if (!box || !text || !btn) return;
+
+    box.classList.toggle('hidden', ready);
+    if (ready) return;
+
+    if (this.state === 'not_running') {
+      text.textContent = 'Ollama no está instalado o no está corriendo. Las funciones de IA (Limpiar, Resumen, Acta) usan un modelo de lenguaje local, 100% en tu PC.';
+      btn.textContent = 'Instalar Ollama + modelo de IA';
+      btn.dataset.mode = 'install';
+    } else {
+      text.textContent = 'Ollama está instalado, pero falta descargar el modelo de IA.';
+      btn.textContent = 'Descargar modelo de IA';
+      btn.dataset.mode = 'model-only';
+    }
+  },
+
+  onInstallClick() {
+    const mode = document.getElementById('ai-install-btn')?.dataset.mode;
+    const msg = mode === 'install'
+      ? 'Se descargará el instalador de Ollama y el modelo de IA (gemma4:e2b, ~7,2 GB): unos 8 GB en total, y puede tardar varios minutos según tu conexión. ¿Continuar?'
+      : 'Se descargará el modelo de IA (gemma4:e2b, ~7,2 GB). Puede tardar varios minutos según tu conexión. ¿Continuar?';
+    showConfirmToast(msg, 'Descargar', () => {
+      if (mode === 'install') this._installOllama();
+      else this._pullModel();
+    });
+  },
+
+  async _installOllama() {
+    this._showProgress('Descargando el instalador de Ollama…');
+    try {
+      await window.transcriptorIA.installOllama();
+    } catch (err) {
+      this._hideProgress();
+      showToast('No se pudo iniciar la instalación de Ollama: ' + err.message, 'error');
+      return;
+    }
+    this._updateProgress(null, 'Se ha abierto el instalador de Ollama — complétalo y espera aquí…');
+    this._pollUntilInstalled(Date.now());
+  },
+
+  _pollUntilInstalled(startedAt) {
+    clearTimeout(this._pollTimer);
+    this._pollTimer = setTimeout(async () => {
+      await this.refresh();
+      if (this.state === 'ready') { this._hideProgress(); return; }
+      if (this.state === 'no_model') { await this._pullModel(); return; }
+      if (Date.now() - startedAt > 10 * 60 * 1000) {
+        this._hideProgress();
+        showToast('Sigue sin detectarse Ollama. Termina el instalador y vuelve a intentarlo desde este panel.', 'info', 8000);
+        return;
+      }
+      this._pollUntilInstalled(startedAt);
+    }, 4000);
+  },
+
+  async _pullModel() {
+    this._showProgress('Descargando modelo de IA…');
+    try {
+      const res = await fetch('/api/ollama/pull-model', { method: 'POST' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const data = JSON.parse(line.slice(6));
+          if (data.error) throw new Error(data.error);
+          if (data.total && data.completed) {
+            const pct = Math.min(100, Math.round((data.completed / data.total) * 100));
+            this._updateProgress(pct, `Descargando modelo de IA… ${pct}%`);
+          } else if (data.status) {
+            this._updateProgress(null, data.status);
+          }
+          if (data.done) {
+            this._hideProgress();
+            await this.refresh();
+            if (this.state === 'ready') showToast('Modelo de IA listo', 'success');
+          }
+        }
+      }
+    } catch (err) {
+      this._hideProgress();
+      showToast('Error al descargar el modelo de IA: ' + err.message, 'error');
+    }
+  },
+
+  _showProgress(msg) {
+    document.getElementById('ai-install-progress')?.classList.remove('hidden');
+    this._updateProgress(0, msg);
+  },
+  _updateProgress(pct, msg) {
+    const bar   = document.getElementById('ai-install-progress-bar');
+    const pctEl = document.getElementById('ai-install-progress-pct');
+    const msgEl = document.getElementById('ai-install-progress-msg');
+    if (pct != null && bar)   bar.style.width = pct + '%';
+    if (pct != null && pctEl) pctEl.textContent = pct + '%';
+    if (msgEl) msgEl.textContent = msg;
+  },
+  _hideProgress() {
+    document.getElementById('ai-install-progress')?.classList.add('hidden');
+  },
+};
+
 async function processWithAI(action) {
+  if (AIStatus.state !== 'ready') {
+    showToast('Las funciones de IA no están disponibles todavía.', 'error');
+    return;
+  }
+
   const plainText = segmentsToPlainText(State.segments);
   if (!plainText.trim()) {
     showToast('No hay transcripción para procesar', 'error');
@@ -1704,9 +1839,12 @@ async function processWithAI(action) {
     }
   } catch (err) {
     thinking.classList.add('hidden');
-    body.textContent = 'Error al conectar con Ollama: ' + err.message +
-      '\n\nAsegúrate de que Ollama está corriendo: ollama serve';
-    showToast('Error con Ollama: ' + err.message, 'error', 5000);
+    const hint = AIStatus.state === 'no_model'
+      ? 'Falta descargar el modelo de IA — vuelve al panel "Procesar con IA" para hacerlo.'
+      : 'Ollama no está disponible ahora mismo — vuelve al panel "Procesar con IA" para instalarlo.';
+    body.textContent = 'Error al procesar con IA: ' + err.message + '\n\n' + hint;
+    showToast('Error con la IA: ' + err.message, 'error', 5000);
+    AIStatus.refresh();
   } finally {
     document.querySelectorAll('.ai-btn').forEach(b => b.classList.remove('loading'));
     thinking.classList.add('hidden');
@@ -2437,7 +2575,14 @@ const TTS = {
       return;
     }
     try {
-      this.cloneStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      // Sin AGC ni cancelación de eco: alteran el nivel y el timbre del clip de
+      // referencia, y el clonador reproduce esos artefactos. La supresión de
+      // ruido se mantiene (ruido de fondo también se clona).
+      this.cloneStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, autoGainControl: false, noiseSuppression: true,
+                 channelCount: 1, sampleRate: 48000 },
+        video: false,
+      });
     } catch (err) {
       showToast('No se pudo acceder al micrófono: ' + err.message, 'error');
       return;
@@ -2716,6 +2861,7 @@ function initEvents() {
   document.querySelectorAll('.ai-btn[data-action]').forEach(btn => {
     btn.addEventListener('click', () => processWithAI(btn.dataset.action));
   });
+  document.getElementById('ai-install-btn')?.addEventListener('click', () => AIStatus.onInstallClick());
 
   // ── AI results: copy / export / close
   document.getElementById('copy-ai-btn').addEventListener('click', () => {
@@ -2768,27 +2914,6 @@ function initEvents() {
 }
 
 // ══════════════════════════════════════════════════
-// HEALTH CHECK
-// ══════════════════════════════════════════════════
-let _statusRetries = 0;
-async function checkStatus() {
-  try {
-    const res = await fetch('/api/status');
-    if (res.ok) {
-      const data = await res.json();
-      UI.setOllamaStatus(data.ollama === true);
-      _statusRetries = 0;
-      return;
-    }
-  } catch { /* ignore */ }
-  // Si el backend o Ollama aún no están listos, reintenta rápido las primeras veces
-  if (_statusRetries < 5) {
-    _statusRetries++;
-    setTimeout(checkStatus, 5_000);
-  }
-}
-
-// ══════════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', async () => {
@@ -2796,11 +2921,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initEvents();
   TTS.init();
   await loadHistory();
-  await checkStatus();
 
   // La grabación funciona de forma nativa (WKWebView con permiso de micrófono).
   // No se desactiva el botón: si el micrófono fallara, start() avisa con detalle.
-
-  // Re-check Ollama status every 30s
-  setInterval(checkStatus, 30_000);
 });

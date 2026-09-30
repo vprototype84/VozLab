@@ -20,6 +20,8 @@ os.environ.setdefault("OMP_WAIT_POLICY", "PASSIVE")
 from pathlib import Path
 from typing import List, Dict, Optional
 
+from proc_utils import NO_WINDOW_KWARGS
+
 # models/diarization está dos niveles por encima de backend/
 _ROOT       = Path(__file__).parent.parent
 _MODEL_DIR  = _ROOT / "models" / "diarization"
@@ -66,7 +68,7 @@ def _load_audio_16k_mono(audio_path: str):
         tmp.close()
         subprocess.run(
             [_ffmpeg_bin(), "-y", "-i", audio_path, "-ac", "1", "-ar", "16000", tmp.name],
-            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **NO_WINDOW_KWARGS,
         )
         data, sr = sf.read(tmp.name, dtype="float32", always_2d=False)
         try:

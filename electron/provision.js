@@ -5,15 +5,19 @@
  *
  * Se ejecuta una sola vez (marcador .provisioned). Detecta si hay GPU NVIDIA
  * disponible para instalar la build de PyTorch con CUDA en vez de la de CPU.
+ * El marcador guarda el hash de requirements.txt: si una actualización de la
+ * app cambia las dependencias, se reinstalan sobre el venv existente (uv solo
+ * descarga lo que falte) sin volver a provisionar Python ni PyTorch.
  */
 const { spawn, execFile } = require('child_process');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
 
 function run(cmd, args, opts = {}, onLine) {
   return new Promise((resolve, reject) => {
-    const proc = spawn(cmd, args, { ...opts, shell: false });
+    const proc = spawn(cmd, args, { ...opts, shell: false, windowsHide: true });
     let stderr = '';
     proc.stdout.on('data', (d) => onLine && onLine(d.toString()));
     proc.stderr.on('data', (d) => { stderr += d.toString(); onLine && onLine(d.toString()); });
@@ -27,7 +31,7 @@ function run(cmd, args, opts = {}, onLine) {
 
 function hasNvidiaGpu() {
   return new Promise((resolve) => {
-    execFile('nvidia-smi', ['-L'], { timeout: 5000 }, (err, stdout) => {
+    execFile('nvidia-smi', ['-L'], { timeout: 5000, windowsHide: true }, (err, stdout) => {
       if (!err && stdout && stdout.toLowerCase().includes('gpu')) {
         resolve(true);
         return;
@@ -37,7 +41,7 @@ function hasNvidiaGpu() {
         'powershell',
         ['-NoProfile', '-Command',
          "(Get-CimInstance Win32_VideoController).Name -join ','"],
-        { timeout: 8000 },
+        { timeout: 8000, windowsHide: true },
         (err2, stdout2) => {
           resolve(!err2 && /nvidia|geforce|quadro|rtx|gtx/i.test(stdout2 || ''));
         },
@@ -106,14 +110,31 @@ async function ensureDiarizationModels(modelsDir, log) {
  * appPaths: { runtimeDir, venvDir, pythonInstallDir, uvCacheDir, uvBin,
  *             backendDir, modelsDir, requirementsPath }
  */
+function requirementsHash(requirementsPath) {
+  return crypto.createHash('sha256').update(fs.readFileSync(requirementsPath)).digest('hex');
+}
+
+function readMarker(markerPath) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(markerPath, 'utf8'));
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    // Marcadores antiguos guardaban solo una fecha ISO: se tratan como
+    // "provisionado, pero con requirements desconocidos".
+    return {};
+  }
+}
+
+function writeMarker(markerPath, reqHash) {
+  fs.writeFileSync(markerPath, JSON.stringify({
+    provisionedAt: new Date().toISOString(),
+    requirementsHash: reqHash,
+  }));
+}
+
 async function provisionRuntime(appPaths, log) {
   const provisionedMarker = path.join(appPaths.runtimeDir, '.provisioned');
-  if (fs.existsSync(provisionedMarker)) {
-    log('Runtime ya provisionado.');
-    return;
-  }
-
-  fs.mkdirSync(appPaths.runtimeDir, { recursive: true });
+  const reqHash = requirementsHash(appPaths.requirementsPath);
 
   const env = {
     ...process.env,
@@ -121,6 +142,31 @@ async function provisionRuntime(appPaths, log) {
     UV_CACHE_DIR: appPaths.uvCacheDir,
     UV_NO_PROGRESS: '1',
   };
+
+  if (fs.existsSync(provisionedMarker)) {
+    if (readMarker(provisionedMarker).requirementsHash === reqHash) {
+      log('Runtime ya provisionado.');
+      return;
+    }
+    // Instalación existente con requirements desactualizados (p. ej. tras una
+    // actualización de la app): reinstalar solo las dependencias del backend.
+    log('Actualizando dependencias del backend…');
+    const hasGpu = await hasNvidiaGpu();
+    const torchIndex = hasGpu
+      ? 'https://download.pytorch.org/whl/cu124'
+      : 'https://download.pytorch.org/whl/cpu';
+    await run(appPaths.uvBin, [
+      'pip', 'install', '--python', appPaths.venvDir,
+      '-r', appPaths.requirementsPath,
+      '--extra-index-url', torchIndex,
+    ], { env }, log);
+    writeMarker(provisionedMarker, reqHash);
+    try { fs.rmSync(appPaths.uvCacheDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+    log('Dependencias actualizadas.');
+    return;
+  }
+
+  fs.mkdirSync(appPaths.runtimeDir, { recursive: true });
 
   log('Comprobando GPU NVIDIA…');
   const hasGpu = await hasNvidiaGpu();
@@ -155,7 +201,7 @@ async function provisionRuntime(appPaths, log) {
   log('Descargando modelos de diarización…');
   await ensureDiarizationModels(appPaths.modelsDir, log);
 
-  fs.writeFileSync(provisionedMarker, new Date().toISOString());
+  writeMarker(provisionedMarker, reqHash);
   log('Provisión completada.');
 
   // Liberar espacio: la caché de uv puede ocupar varios GB tras la instalación.
@@ -166,4 +212,4 @@ async function provisionRuntime(appPaths, log) {
   }
 }
 
-module.exports = { provisionRuntime, hasNvidiaGpu };
+module.exports = { provisionRuntime, hasNvidiaGpu, download };

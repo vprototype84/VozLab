@@ -3,7 +3,7 @@ import httpx
 from typing import AsyncGenerator
 
 OLLAMA_BASE_URL = "http://localhost:11434"
-OLLAMA_MODEL = "gemma4:e4b"
+OLLAMA_MODEL = "gemma4:e2b"
 
 _SYSTEM = {
     "clean": (
@@ -77,10 +77,45 @@ async def process_with_ollama(text: str, action: str) -> AsyncGenerator[str, Non
                     continue
 
 
-async def check_ollama_available() -> bool:
+def _norm_tag(tag: str) -> str:
+    """Normaliza un tag de modelo Ollama para comparar (tolera el sufijo ':latest')."""
+    return tag[: -len(":latest")] if tag.endswith(":latest") else tag
+
+
+async def get_ollama_status() -> str:
+    """Devuelve 'ready' | 'no_model' | 'not_running'.
+
+    'not_running' cubre tanto "Ollama no está instalado" como "está instalado
+    pero el servidor no responde" — no se puede distinguir sin más información,
+    y de cara al usuario el remedio es el mismo (instalar/arrancar Ollama).
+    """
     try:
-        import urllib.request
-        urllib.request.urlopen(f"{OLLAMA_BASE_URL}/api/tags", timeout=3)
-        return True
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get(f"{OLLAMA_BASE_URL}/api/tags")
+            resp.raise_for_status()
     except Exception:
-        return False
+        return "not_running"
+
+    try:
+        models = resp.json().get("models", [])
+    except Exception:
+        return "no_model"
+
+    target = _norm_tag(OLLAMA_MODEL)
+    installed = {_norm_tag(m.get("name") or m.get("model") or "") for m in models}
+    return "ready" if target in installed else "no_model"
+
+
+async def pull_model() -> AsyncGenerator[dict, None]:
+    """Descarga OLLAMA_MODEL vía /api/pull, cediendo cada línea de progreso NDJSON ya parseada."""
+    payload = {"model": OLLAMA_MODEL, "stream": True}
+    async with httpx.AsyncClient(timeout=None) as client:
+        async with client.stream("POST", f"{OLLAMA_BASE_URL}/api/pull", json=payload) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line.strip():
+                    continue
+                try:
+                    yield json.loads(line)
+                except json.JSONDecodeError:
+                    continue

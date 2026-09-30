@@ -102,10 +102,6 @@
             <option value="5">5 personas</option>
           </select>
         </div>
-        <div id="ollama-status" class="status-badge status-checking">
-          <span class="status-dot"></span>
-          <span class="status-text">IA</span>
-        </div>
       </div>
     </header>
 
@@ -507,7 +503,7 @@
       <div class="ai-panel">
         <div class="ai-panel-head">
           <h3 class="ai-panel-title">Procesar con IA</h3>
-          <span class="ai-model-tag">gemma4:e4b</span>
+          <span class="ai-model-tag" id="ai-model-tag">gemma4:e2b</span>
         </div>
         <div class="ai-buttons">
           <button class="ai-btn" id="btn-clean" data-action="clean">
@@ -531,6 +527,23 @@
               <div class="ai-btn-desc">Formato profesional con acuerdos y pasos</div>
             </div>
           </button>
+        </div>
+
+        <!-- Aviso + botón de instalación, oculto cuando Ollama+modelo están listos -->
+        <div class="ai-unavailable hidden" id="ai-unavailable">
+          <p class="ai-unavailable-text" id="ai-unavailable-text"></p>
+          <button class="btn btn-outline btn-sm" id="ai-install-btn"></button>
+        </div>
+
+        <!-- Progreso de instalación/descarga del modelo (reutiliza el patrón visual del narrador TTS) -->
+        <div class="narrate-progress hidden" id="ai-install-progress">
+          <div class="progress-head">
+            <span id="ai-install-progress-msg">Preparando…</span>
+            <span id="ai-install-progress-pct" class="progress-pct">0%</span>
+          </div>
+          <div class="progress-track">
+            <div id="ai-install-progress-bar" class="progress-fill" style="width:0%"></div>
+          </div>
         </div>
       </div>
     </section>

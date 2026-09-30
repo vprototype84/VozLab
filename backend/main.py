@@ -14,6 +14,8 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict
 
+from proc_utils import NO_WINDOW_KWARGS
+
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse
@@ -147,7 +149,7 @@ async def start_transcription(
     try:
         _r = subprocess.run(
             [FFPROBE, "-v", "quiet", "-print_format", "json", "-show_format", str(audio_path)],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, timeout=30, **NO_WINDOW_KWARGS,
         )
         audio_duration = float(json.loads(_r.stdout).get("format", {}).get("duration", 0))
     except Exception:
@@ -285,7 +287,7 @@ async def download_audio(job_id: str, name: str = "audio"):
                 [FFMPEG, "-y", "-i", str(src),
                  "-af", "loudnorm=I=-16:TP=-1.5:LRA=11",
                  "-c:a", "aac", "-b:a", "128k", str(out)],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **NO_WINDOW_KWARGS,
             )
         )
     if not out.exists():
@@ -317,6 +319,7 @@ async def meeting_start():
     proc = subprocess.Popen(
         _meetingrec_cmd(base),
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        **NO_WINDOW_KWARGS,
     )
     rec = {
         "proc": proc, "base": base, "started": time.time(),
@@ -455,7 +458,8 @@ async def meeting_stop(request: Request):
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(
         None, functools.partial(subprocess.run, cmd,
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                **NO_WINDOW_KWARGS)
     )
 
     # Limpiar las pistas crudas.
@@ -473,7 +477,7 @@ async def meeting_stop(request: Request):
     try:
         _r = subprocess.run(
             [FFPROBE, "-v", "quiet", "-print_format", "json", "-show_format", str(out_wav)],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, timeout=30, **NO_WINDOW_KWARGS,
         )
         audio_duration = float(json.loads(_r.stdout).get("format", {}).get("duration", 0))
     except Exception:
@@ -526,6 +530,7 @@ async def screenrec_start():
     proc = subprocess.Popen(
         _meetingrec_cmd(base, "--video"),
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        **NO_WINDOW_KWARGS,
     )
     rec = {
         "proc": proc, "base": base, "started": time.time(),
@@ -653,7 +658,7 @@ async def screenrec_stop(request: Request):
     import functools
 
     def _run_ffmpeg(cmd: list) -> None:
-        r = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        r = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, **NO_WINDOW_KWARGS)
         if r.returncode != 0:
             raise RuntimeError(r.stderr.decode("utf-8", "ignore").strip()[-600:])
 
@@ -723,7 +728,7 @@ async def screenrec_stop(request: Request):
     try:
         _r = subprocess.run(
             [FFPROBE, "-v", "quiet", "-print_format", "json", "-show_format", str(out_wav)],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, timeout=30, **NO_WINDOW_KWARGS,
         )
         audio_duration = float(json.loads(_r.stdout).get("format", {}).get("duration", 0))
     except Exception:
@@ -779,9 +784,34 @@ async def download_video(job_id: str, name: str = "grabacion"):
 
 @app.get("/api/status")
 async def status():
-    from ollama_client import check_ollama_available
-    ollama_ok = await check_ollama_available()
-    return {"status": "ok", "ollama": ollama_ok}
+    return {"status": "ok"}
+
+
+@app.get("/api/ollama/status")
+async def ollama_status():
+    from ollama_client import get_ollama_status, OLLAMA_MODEL
+    state = await get_ollama_status()
+    return {"state": state, "model": OLLAMA_MODEL}
+
+
+@app.post("/api/ollama/pull-model")
+async def ollama_pull_model():
+    from ollama_client import pull_model
+
+    async def generate():
+        try:
+            async for event in pull_model():
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+        finally:
+            yield f"data: {json.dumps({'done': True})}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.get("/api/history")

@@ -22,3 +22,13 @@ chatterbox-tts==0.1.7
 # torch/torchaudio NO se instalan aquí: se instalan en el provisioning
 # (scripts/setup.ps1 o electron/main.js) con el índice de PyTorch correcto
 # según si hay GPU NVIDIA disponible (CUDA) o no (CPU). Ver sección 4 del plan.
+
+# chatterbox-tts → resemble-perth importa `pkg_resources` (setuptools) sin
+# declararlo como dependencia. El venv que crea uv no trae setuptools, y a partir
+# de setuptools 81 `pkg_resources` ya no existe: sin esta línea el watermarker de
+# perth queda en None y el modelo falla al cargar ("'NoneType' object is not callable").
+setuptools>=70,<81
+
+# Verificación de la narración con Whisper: pasa los números a letras antes de
+# comparar lo transcrito con el texto pedido.
+num2words>=0.5.13

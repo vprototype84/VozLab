@@ -1,10 +1,11 @@
 'use strict';
-const { app, BrowserWindow, session, ipcMain } = require('electron');
+const { app, BrowserWindow, session, ipcMain, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { spawn, execSync } = require('child_process');
+const os = require('os');
+const { spawn, spawnSync } = require('child_process');
 const http = require('http');
-const { provisionRuntime } = require('./provision');
+const { provisionRuntime, download } = require('./provision');
 
 const PORT = 8000;
 const APP_URL = `http://127.0.0.1:${PORT}`;
@@ -84,6 +85,7 @@ function bootBackend(appPaths) {
 
   backendProc = spawn(appPaths.pythonBin, [path.join(appPaths.backendDir, 'main.py')], {
     cwd: appPaths.backendDir,
+    windowsHide: true,
     env: {
       ...process.env,
       PYTHONUNBUFFERED: '1',
@@ -137,11 +139,10 @@ async function ensureOllamaRunning(log) {
 function killBackend() {
   if (!backendProc) return;
   if (process.platform === 'win32') {
-    try {
-      execSync(`taskkill /pid ${backendProc.pid} /f /t`);
-    } catch {
-      /* ya pudo haber salido */
-    }
+    spawnSync('taskkill', ['/pid', String(backendProc.pid), '/f', '/t'], {
+      windowsHide: true,
+      stdio: 'ignore',
+    });
   } else {
     backendProc.kill('SIGTERM');
   }
@@ -192,6 +193,17 @@ function registerPermissionHandlers() {
 
 ipcMain.handle('get-app-url', () => APP_URL);
 
+// Descarga el instalador oficial de Ollama y lo abre (visible: es el wizard
+// oficial de un instalador de terceros, acción explícita pedida por el
+// usuario, no el problema de ventanas de consola que arregla la Parte 1).
+ipcMain.handle('install-ollama', async () => {
+  const dest = path.join(os.tmpdir(), `OllamaSetup-${Date.now()}.exe`);
+  await download('https://ollama.com/download/OllamaSetup.exe', dest);
+  const err = await shell.openPath(dest);
+  if (err) throw new Error(err);
+  return { ok: true };
+});
+
 async function main() {
   await app.whenReady();
   registerPermissionHandlers();
@@ -199,8 +211,6 @@ async function main() {
   const appPaths = getPaths();
   const win = createWindow();
 
-  const provisionedMarker = path.join(appPaths.runtimeDir, '.provisioned');
-  const needsProvisioning = !isDev && !fs.existsSync(provisionedMarker);
 
   win.loadFile(path.join(__dirname, '..', 'renderer', 'loading.html'));
   win.show();
@@ -214,7 +224,10 @@ async function main() {
   ensureOllamaRunning(log);
 
   try {
-    if (needsProvisioning) {
+    // provisionRuntime decide por sí mismo qué hace falta: provisión completa
+    // (primer arranque), solo actualizar dependencias (requirements cambiados
+    // tras una actualización) o nada.
+    if (!isDev) {
       await provisionRuntime(appPaths, log);
     }
     bootBackend(appPaths);

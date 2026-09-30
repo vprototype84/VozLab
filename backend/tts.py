@@ -37,6 +37,8 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
+from proc_utils import NO_WINDOW_KWARGS
+
 _BASE = Path(__file__).parent.parent
 _DEFAULT_VOICES_DIR = _BASE / "voices"
 
@@ -155,6 +157,9 @@ def _load_model_thread():
         _model_ready   = True
         _model_loading = False
     except Exception as exc:
+        import traceback
+        print("[tts] Error cargando el modelo Chatterbox:", flush=True)
+        traceback.print_exc()
         _model_error   = str(exc)
         _model_loading = False
 
@@ -338,7 +343,7 @@ def save_cloned_voice(
         [FFMPEG, "-y", "-i", str(raw_path),
          "-ar", "24000", "-ac", "1", "-acodec", "pcm_s16le",
          str(ref_wav)],
-        capture_output=True,
+        capture_output=True, **NO_WINDOW_KWARGS,
     )
     raw_path.unlink(missing_ok=True)
 
@@ -362,6 +367,53 @@ def save_cloned_voice(
     return {"voice_id": voice_id, "name": name}
 
 
+def _clean_reference(voice_dir: Path) -> str:
+    """Devuelve la ruta de la referencia "limpia" de una voz, generándola si hace falta.
+
+    Chatterbox solo usa los primeros ~6 s del clip para el timbre (T3) y ~10 s
+    para el decodificador (S3Gen). Un clip que empieza con silencio, con pausas
+    largas, bajo de nivel o recortado da un embedding de locutor pobre y provoca
+    errores y artefactos. `reference_clean.wav` se genera a partir de
+    `reference.wav` con ffmpeg: filtro paso alto (ruido de baja frecuencia),
+    recorte del silencio inicial/final, compresión de pausas internas a 0,25 s,
+    normalización de sonoridad (-20 LUFS, pico -1,5 dB) y máximo 20 s.
+    Se cachea junto a la voz y se regenera si `reference.wav` cambia.
+    Si ffmpeg falla, se usa la referencia original tal cual.
+    """
+    raw = voice_dir / "reference.wav"
+    clean = voice_dir / "reference_clean.wav"
+    try:
+        if clean.exists() and clean.stat().st_mtime >= raw.stat().st_mtime and clean.stat().st_size > 1000:
+            return str(clean)
+    except OSError:
+        return str(raw)
+
+    filters = ",".join([
+        "highpass=f=60",
+        "silenceremove=start_periods=1:start_silence=0.1:start_threshold=-40dB"
+        ":stop_periods=-1:stop_silence=0.25:stop_threshold=-40dB",
+        "loudnorm=I=-20:TP=-1.5:LRA=9",
+        "atrim=0:20",
+    ])
+    tmp = TMP_DIR / f"refclean_{uuid.uuid4()}.wav"
+    try:
+        result = subprocess.run(
+            [FFMPEG, "-y", "-i", str(raw), "-af", filters,
+             "-ar", "24000", "-ac", "1", "-acodec", "pcm_s16le", str(tmp)],
+            capture_output=True, **NO_WINDOW_KWARGS,
+        )
+        if result.returncode == 0 and tmp.exists() and tmp.stat().st_size > 1000:
+            shutil.move(str(tmp), str(clean))
+            return str(clean)
+        print(f"[tts] No se pudo limpiar la referencia de {voice_dir.name}: "
+              f"{result.stderr.decode(errors='ignore')[-300:]}", flush=True)
+    except Exception as exc:
+        print(f"[tts] No se pudo limpiar la referencia de {voice_dir.name}: {exc}", flush=True)
+    finally:
+        tmp.unlink(missing_ok=True)
+    return str(raw)
+
+
 # ── Perfiles de voz ───────────────────────────────────────────────────────────
 # Cada perfil ajusta la expresividad de Chatterbox con sus mandos nativos:
 #   - exaggeration: intensidad emocional/énfasis (0.5 por defecto; más alto = más
@@ -376,7 +428,9 @@ PROFILES: dict = {
     "normal": {
         "name": "Normal",
         "description": "Voz neutra, como hasta ahora.",
-        "params": {},
+        # temperature por debajo del 0.8 del modelo: menos errores y artefactos
+        # sin perder naturalidad apreciable.
+        "params": {"temperature": 0.65},
     },
     "cercana": {
         "name": "Cercana",
@@ -491,7 +545,7 @@ def _generate_elevenlabs(job_id: str, settings: dict, voice_dir: Path, meta: dic
         out_wav = TMP_DIR / f"tts_{job_id}.wav"
         subprocess.run(
             [FFMPEG, "-y", "-i", str(out_mp3), "-acodec", "pcm_s16le", str(out_wav)],
-            capture_output=True, check=True,
+            capture_output=True, check=True, **NO_WINDOW_KWARGS,
         )
         out_mp3.unlink(missing_ok=True)
         return out_wav
@@ -530,7 +584,7 @@ def list_profiles() -> list:
 # Longitud máxima (caracteres) por fragmento enviado a Chatterbox. El modelo
 # degrada con textos largos (se acelera, se salta frases, mete artefactos al
 # final), así que se trocea en frases y se concatena el audio resultante.
-_TTS_MAX_CHARS = 280
+_TTS_MAX_CHARS = 220  # fragmentos más cortos = menos alucinaciones por fragmento
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?…;:])\s+|\n+")
 
 
@@ -585,18 +639,115 @@ def _split_text(text: str, max_len: int = _TTS_MAX_CHARS) -> list:
     return chunks
 
 
+# Verificación de fragmentos con Whisper: cada trozo generado se transcribe y se
+# compara con el texto pedido; si la tasa de error de caracteres supera el umbral
+# se regenera (hasta _VERIFY_MAX_ATTEMPTS intentos) y se conserva el mejor.
+# Detecta alucinaciones, palabras comidas y "ruidos raros" al final del fragmento.
+_VERIFY_WITH_WHISPER = True
+_VERIFY_CER_THRESHOLD = 0.10
+_VERIFY_MAX_ATTEMPTS  = 3
+_VERIFY_WHISPER_MODEL = "small"   # ligero: convive con Chatterbox en GPUs de 6 GB
+_verify_model = None
+_verify_lock  = threading.Lock()
+
+
+def _normalize_for_cer(text: str, lang: str = "es") -> str:
+    """Minúsculas, sin tildes ni puntuación, y con los números en letras
+    (Whisper escribe "10" y "2027" aunque se haya dicho "diez" / "dos mil
+    veintisiete"; sin esto la comparación daría falsos positivos)."""
+    import unicodedata
+    text = text.lower()
+    try:
+        from num2words import num2words
+        def _words(m):
+            n = int(m.group())
+            # En inglés los años se leen "twenty twenty-seven", no "two thousand...".
+            if lang == "en" and 1100 <= n <= 2099:
+                return " " + num2words(n, lang=lang, to="year") + " "
+            return " " + num2words(n, lang=lang) + " "
+        text = re.sub(r"\d+", _words, text)
+    except Exception:
+        pass
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    text = re.sub(r"[^a-z0-9ñ\s]", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _cer(ref: str, hyp: str, lang: str = "es") -> float:
+    """Tasa de error de caracteres (Levenshtein / len(ref)) sobre texto normalizado."""
+    ref, hyp = _normalize_for_cer(ref, lang), _normalize_for_cer(hyp, lang)
+    if not ref:
+        return 0.0
+    prev = list(range(len(hyp) + 1))
+    for i, rc in enumerate(ref, 1):
+        cur = [i]
+        for j, hc in enumerate(hyp, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (rc != hc)))
+        prev = cur
+    return prev[-1] / len(ref)
+
+
+def _get_verify_model():
+    global _verify_model
+    with _verify_lock:
+        if _verify_model is None:
+            import transcriber
+            device = _device()
+            compute = "int8_float16" if device == "cuda" else "int8"
+            _verify_model = transcriber._load_faster_whisper(
+                _VERIFY_WHISPER_MODEL, compute, device, batch_size=0)
+        return _verify_model
+
+
+def _transcribe_chunk(wav, sr: int, language: str) -> str:
+    """Transcribe un tensor (1, N) con Whisper; devuelve "" si algo falla."""
+    try:
+        import torchaudio.functional as F
+        audio = F.resample(wav, sr, 16000)[0].numpy().astype("float32")
+        segments, _ = _get_verify_model().transcribe(
+            audio, language=language, beam_size=1, vad_filter=False,
+            condition_on_previous_text=False)
+        return " ".join(seg.text for seg in segments)
+    except Exception as exc:
+        print(f"[tts] Verificación Whisper no disponible: {exc}", flush=True)
+        return ""
+
+
+def _trim_trailing(wav, sr: int, threshold: float = 0.01, keep: float = 0.08):
+    """Recorta el silencio/ruido de baja energía del final del fragmento.
+
+    Chatterbox a veces deja una cola de silencio o residuo tras la última
+    palabra; recortarla evita huecos largos y artefactos entre fragmentos.
+    """
+    import torch
+    x = wav[0].abs()
+    win = max(1, int(sr * 0.02))
+    n = (x.numel() // win) * win
+    if n == 0:
+        return wav
+    env = x[:n].view(-1, win).mean(dim=1)
+    active = torch.nonzero(env > threshold)
+    if active.numel() == 0:
+        return wav
+    end = min(wav.shape[1], (int(active[-1]) + 1) * win + int(sr * keep))
+    return wav[:, :end]
+
+
 def _infer_chatterbox(ref_audio: str, language: str, text: str, out_wav: Path,
-                      params: Optional[dict] = None) -> None:
+                      params: Optional[dict] = None,
+                      on_progress=None) -> None:
     """Síntesis con Chatterbox Multilingual usando una referencia de audio para
     clonación de voz zero-shot.
 
-    `language` es el `language_id` de Chatterbox (p. ej. "es-es", "en").
+    `language` es el `language_id` de Chatterbox (p. ej. "es", "en").
     `params` puede traer exaggeration / cfg_weight / temperature (los manda el
     perfil de voz); las claves no soportadas se ignoran. Los textos largos se
-    trocean en frases (ver `_split_text`) y sus audios se concatenan con un breve
-    silencio entre fragmentos. La salida se escribe como WAV con la frecuencia de
-    muestreo nativa del modelo (model.sr); la conversión a mp3 y el ajuste de
-    velocidad (atempo) los hace ffmpeg después.
+    trocean en frases (ver `_split_text`); cada fragmento se verifica con
+    Whisper (ver `_VERIFY_WITH_WHISPER`) y se regenera si no coincide con el
+    texto, se le recorta la cola y se concatena con un breve silencio. La salida
+    se escribe como WAV a la frecuencia nativa del modelo (model.sr); la
+    conversión a mp3 y el ajuste de velocidad (atempo) los hace ffmpeg después.
     """
     import warnings
     warnings.filterwarnings("ignore")
@@ -609,6 +760,7 @@ def _infer_chatterbox(ref_audio: str, language: str, text: str, out_wav: Path,
             gen_kwargs[key] = params[key]
 
     chunks = _split_text(text) or [text]
+    whisper_lang = "en" if language == "en" else "es"
 
     # El modelo no es thread-safe: serializar todas las inferencias locales.
     with _gen_lock:
@@ -616,18 +768,37 @@ def _infer_chatterbox(ref_audio: str, language: str, text: str, out_wav: Path,
         gap = torch.zeros(1, int(sr * 0.15))  # ~150 ms de silencio entre fragmentos
         wavs = []
         for i, chunk in enumerate(chunks):
-            wav = _tts_engine.generate(
-                text=chunk,
-                language_id=language,
-                audio_prompt_path=ref_audio,
-                **gen_kwargs,
-            )
-            if wav.dim() == 1:
-                wav = wav.unsqueeze(0)
-            wav = wav.detach().cpu()
+            best_wav, best_cer = None, None
+            attempts = _VERIFY_MAX_ATTEMPTS if _VERIFY_WITH_WHISPER else 1
+            for attempt in range(attempts):
+                wav = _tts_engine.generate(
+                    text=chunk,
+                    language_id=language,
+                    audio_prompt_path=ref_audio,
+                    **gen_kwargs,
+                )
+                if wav.dim() == 1:
+                    wav = wav.unsqueeze(0)
+                wav = _trim_trailing(wav.detach().cpu(), sr)
+                if not _VERIFY_WITH_WHISPER:
+                    best_wav = wav
+                    break
+                hyp = _transcribe_chunk(wav, sr, whisper_lang)
+                if not hyp:
+                    best_wav = wav   # sin verificación posible: aceptar
+                    break
+                cer = _cer(chunk, hyp, whisper_lang)
+                if best_cer is None or cer < best_cer:
+                    best_wav, best_cer = wav, cer
+                if cer <= _VERIFY_CER_THRESHOLD:
+                    break
+                print(f"[tts] Fragmento {i+1}/{len(chunks)} intento {attempt+1}: "
+                      f"CER {cer:.2f} > {_VERIFY_CER_THRESHOLD}, regenerando", flush=True)
             if i > 0:
                 wavs.append(gap)
-            wavs.append(wav)
+            wavs.append(best_wav)
+            if on_progress:
+                on_progress((i + 1) / len(chunks))
 
     final = wavs[0] if len(wavs) == 1 else torch.cat(wavs, dim=1)
     ta.save(str(out_wav), final, sr)
@@ -737,7 +908,7 @@ def generate_speech(
             return
 
         # ── Motor local: Chatterbox ───────────────────────────────────────────
-        ref_audio = str(voice_dir / "reference.wav")
+        ref_audio = _clean_reference(voice_dir)
         if language in SUPPORTED_LANGUAGES:
             out_language = _UI_LANG_TO_CHATTERBOX[language]
         else:
@@ -773,7 +944,8 @@ def generate_speech(
         _set(status="generating", progress=20)
 
         out_wav = TMP_DIR / f"tts_{job_id}.wav"
-        _infer_chatterbox(ref_audio, out_language, text, out_wav, synth_params)
+        _infer_chatterbox(ref_audio, out_language, text, out_wav, synth_params,
+                          on_progress=lambda f: _set(progress=20 + int(f * 60)))
 
         _set(progress=80)
 
@@ -785,7 +957,7 @@ def generate_speech(
                 [FFMPEG, "-y", "-i", str(out_wav), *af,
                  "-codec:a", "libmp3lame", "-q:a", "2",
                  str(out_final)],
-                capture_output=True, check=True,
+                capture_output=True, check=True, **NO_WINDOW_KWARGS,
             )
             out_wav.unlink(missing_ok=True)
         elif af:
@@ -793,7 +965,7 @@ def generate_speech(
             subprocess.run(
                 [FFMPEG, "-y", "-i", str(out_wav), *af,
                  "-acodec", "pcm_s16le", str(out_final)],
-                capture_output=True, check=True,
+                capture_output=True, check=True, **NO_WINDOW_KWARGS,
             )
             out_wav.unlink(missing_ok=True)
         else:

@@ -6,4 +6,5 @@ contextBridge.exposeInMainWorld('transcriptorIA', {
   onProvisionLog: (callback) => {
     ipcRenderer.on('provision-log', (_event, msg) => callback(msg));
   },
+  installOllama: () => ipcRenderer.invoke('install-ollama'),
 });

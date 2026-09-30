@@ -33,6 +33,11 @@ import time
 import wave
 from pathlib import Path
 
+# Este script se ejecuta como entrypoint standalone (fuera del paquete
+# backend/), así que definimos el flag localmente en vez de importar
+# backend/proc_utils.py.
+_NO_WINDOW = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
+
 FFMPEG = os.environ.get("TRANSCRIPTORIA_FFMPEG", "ffmpeg")
 
 SAMPLE_RATE = 48000
@@ -96,7 +101,18 @@ def _capture_loop(tag: str, recorder, wav_writer: _WavWriter, last_emit: list) -
                 _emit(f"WRITE_ERROR {exc}")
 
 
-def _stdin_control_thread(ffmpeg_proc) -> None:
+def _stop_ffmpeg(ffmpeg_proc) -> None:
+    """Pide a ffmpeg que cierre y ESPERA a que termine de escribir el MP4 (moov atom).
+    Si el script termina antes, el vídeo queda corrupto."""
+    if not ffmpeg_proc or ffmpeg_proc.poll() is not None:
+        return
+    try:
+        ffmpeg_proc.communicate(input=b"q", timeout=30)
+    except Exception:
+        ffmpeg_proc.kill()
+
+
+def _stdin_control_thread() -> None:
     global _paused
     for raw in sys.stdin:
         cmd = raw.strip().upper()
@@ -108,12 +124,10 @@ def _stdin_control_thread(ffmpeg_proc) -> None:
             _emit("RESUMED")
         elif cmd == "STOP":
             _stop.set()
-            if ffmpeg_proc and ffmpeg_proc.poll() is None:
-                try:
-                    ffmpeg_proc.communicate(input=b"q", timeout=10)
-                except Exception:
-                    ffmpeg_proc.kill()
             break
+    else:
+        # stdin cerrado (el backend murió): parar igualmente.
+        _stop.set()
 
 
 def main() -> int:
@@ -154,9 +168,10 @@ def main() -> int:
             stdin=subprocess.PIPE,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            **_NO_WINDOW,
         )
 
-    threading.Thread(target=_stdin_control_thread, args=(ffmpeg_proc,), daemon=True).start()
+    threading.Thread(target=_stdin_control_thread, daemon=True).start()
 
     try:
         with loopback_mic.recorder(samplerate=SAMPLE_RATE, channels=CHANNELS, blocksize=BLOCK_FRAMES) as sys_rec, \
@@ -178,16 +193,12 @@ def main() -> int:
         sys.stderr.write(f"STREAM_ERROR {exc}\n")
         sys_wav.close()
         mic_wav.close()
+        _stop_ffmpeg(ffmpeg_proc)
         return 3
 
     sys_wav.close()
     mic_wav.close()
-
-    if ffmpeg_proc and ffmpeg_proc.poll() is None:
-        try:
-            ffmpeg_proc.communicate(input=b"q", timeout=10)
-        except Exception:
-            ffmpeg_proc.kill()
+    _stop_ffmpeg(ffmpeg_proc)
 
     return 0
 
